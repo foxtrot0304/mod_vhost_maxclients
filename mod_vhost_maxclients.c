@@ -80,6 +80,7 @@ typedef struct {
   signed int vhost_maxclients;
   signed int vhost_maxclients_log;
   signed int vhost_maxclients_per_ip;
+  signed int vhost_maxclients_for_https;
   apr_array_header_t *ignore_extensions;
   unsigned int vhost_maxclients_time_from;
   unsigned int vhost_maxclients_time_to;
@@ -152,6 +153,7 @@ static void *vhost_maxclients_create_server_config(apr_pool_t *p, server_rec *s)
   scfg->vhost_maxclients = 0;
   scfg->vhost_maxclients_log = 0;
   scfg->vhost_maxclients_per_ip = 0;
+  scfg->vhost_maxclients_for_https = 0;
   scfg->ignore_extensions = apr_array_make(p, VHOST_MAXEXTENSIONS, sizeof(char *));
   scfg->vhost_maxclients_time_from = 0;
   scfg->vhost_maxclients_time_to = 2359;
@@ -174,6 +176,7 @@ static void *vhost_maxclients_create_server_merge_conf(apr_pool_t *p, void *b, v
   scfg->vhost_maxclients = new->vhost_maxclients;
   scfg->vhost_maxclients_log = new->vhost_maxclients_log;
   scfg->vhost_maxclients_per_ip = new->vhost_maxclients_per_ip;
+  scfg->vhost_maxclients_for_https = new->vhost_maxclients_for_https;
   scfg->ignore_extensions = new->ignore_extensions;
   scfg->vhost_maxclients_time_from = new->vhost_maxclients_time_from;
   scfg->vhost_maxclients_time_to = new->vhost_maxclients_time_to;
@@ -243,6 +246,10 @@ static int vhost_maxclients_handler(request_rec *r)
 
   if (scfg->vhost_maxclients <= 0) {
     return DECLINED;
+  }
+
+  if (scfg->vhost_maxclients_for_https > 0) {
+      scfg->vhost_maxclients = scfg->vhost_maxclients_for_https;
   }
 
   if (r->hostname == NULL) {
@@ -435,6 +442,21 @@ static const char *set_vhost_maxclientsvhost_perip(cmd_parms *parms, void *mconf
   return NULL;
 }
 
+static const char *set_vhost_maxclientsvhost_forhttps(cmd_parms *parms, void *mconfig, const char *arg1)
+{
+  vhost_maxclients_config *scfg =
+      (vhost_maxclients_config *)ap_get_module_config(parms->server->module_config, &vhost_maxclients_module);
+  signed long int limit = strtol(arg1, (char **)NULL, 10);
+
+  if ((limit > 65535) || (limit < 0)) {
+    return "Integer overflow or invalid number";
+  }
+
+  scfg->vhost_maxclients_for_https = limit;
+
+  return NULL;
+}
+
 static const char *set_vhost_ignore_extensions(cmd_parms *parms, void *mconfig, const char *arg)
 {
   vhost_maxclients_config *scfg =
@@ -479,6 +501,8 @@ static command_rec vhost_maxclients_cmds[] = {
                   "logging file path instead of error_log"),
     AP_INIT_TAKE1("VhostMaxClientsPerIP", set_vhost_maxclientsvhost_perip, NULL, RSRC_CONF | ACCESS_CONF,
                   "maximum connections per IP of Vhost"),
+    AP_INIT_TAKE1("VhostMaxClientsForHttps", set_vhost_maxclientsvhost_forhttps, NULL, RSRC_CONF | ACCESS_CONF,
+                  "maximum connections per Vhost for Https"),
     AP_INIT_ITERATE("IgnoreVhostMaxClientsExt", set_vhost_ignore_extensions, NULL, ACCESS_CONF | RSRC_CONF,
                   "Set Ignore Extensions."),
     AP_INIT_TAKE2("VhostMaxClientsTimeSlot", set_vhost_maxclients_time, NULL, RSRC_CONF | ACCESS_CONF,
